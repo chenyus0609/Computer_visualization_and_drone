@@ -31,8 +31,9 @@ int main(int argc, char *argv[])
 	vector<vector<Point3f> > points_3d;
 	Size imgsize(7, 5);
 
+	Mat image;
     // Initialize
-    if (!ardrone.open()) {
+    /*if (!ardrone.open()) {
         std::cout << "Failed to initialize." << std::endl;
         return -1;
     }
@@ -59,7 +60,7 @@ int main(int argc, char *argv[])
     std::cout << "*    'C'     -- Change camera         *" << std::endl;
     std::cout << "*    'Esc'   -- Exit                  *" << std::endl;
     std::cout << "*                                     *" << std::endl;
-    std::cout << "***************************************" << std::endl;
+    std::cout << "***************************************" << std::endl;*/
 
 	//dictionary
 	//cv::Ptr<cv::aruco::Dictionary> dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
@@ -69,11 +70,12 @@ int main(int argc, char *argv[])
 	std::vector<int> ids;
 	std::vector<std::vector<cv::Point2f>> corners;
 	
-
+	VideoCapture cap(1);
 	//calibrate camera
 	while (i) {
 		// Get an image
-		frame = ardrone.getImage();
+		//frame = ardrone.getImage();
+		cap >> frame;
 		cvtColor(frame, frame, CV_RGB2GRAY);
 		bool n = findChessboardCorners(frame, Size(7, 5), frame_corners);
 		if (!n) continue; //to make sure we capture the chessboard. If not, capture again
@@ -97,27 +99,44 @@ int main(int argc, char *argv[])
 		i--;
 	}
 	calibrateCamera(points_3d, corners_2d, frame.size(), intrinsic, distortionCoeffs, rvecs, tvecs);
-
+	vector<Vec3d> rvecs2, tvecs2;
     while (1) {
-		vector<Vec3d> rvecs2, tvecs2;
+		
         // Key input
         int key = cv::waitKey(33);
         if (key == 0x1b) break;
 
         // Get an image
-        cv::Mat image = ardrone.getImage();
-		cvtColor(image, image, CV_RGB2GRAY);
+        //cv::Mat image = ardrone.getImage();
+		cap >> image;
+		//cvtColor(image, image, CV_RGB2GRAY);
 		Mat out;
 		initUndistortRectifyMap(intrinsic, distortionCoeffs, Mat(), intrinsic, image.size(), CV_32FC1, outputMapX, outputMapY);
-		remap(image, out, outputMapX, outputMapY, INTER_LINEAR);
+		remap(image, image, outputMapX, outputMapY, INTER_LINEAR);
 
 		cout << "fucking" << endl;
 
-		cv::aruco::detectMarkers(out, dictionary, corners, ids);
-		cv::aruco::estimatePoseSingleMarkers(corners,
-			markerLength, intrinsic, distortionCoeffs, rvecs2, tvecs2);
+		cv::aruco::detectMarkers(image, dictionary, corners, ids);
+		cv::aruco::estimatePoseSingleMarkers(corners, markerLength, intrinsic, distortionCoeffs, rvecs2, tvecs2);
+		cout << "test1" << endl;
+		aruco::drawDetectedMarkers(image, corners, ids);
+		cout << "test2" << endl;
+		//cout << rvecs2[0] << endl;
+		//aruco::drawAxis(out, intrinsic, distortionCoeffs, rvecs2, tvecs2, 0.1);
+		for (int index_marker = 0; index_marker < ids.size(); index_marker++)
+		{
+			cout << "rvecs2[0]" << rvecs2[index_marker] << endl;
+			aruco::drawAxis(image, intrinsic, distortionCoeffs, rvecs2[index_marker], tvecs2[index_marker], 10);
+			cout << "tvecs2[0]" << tvecs2[index_marker] << endl;
+			cout << "tvecs2[1]" << tvecs2[index_marker + 1] << endl;
+			cout << "tvecs2[2]" << tvecs2[index_marker + 2] << endl;
+			
+			cout << index_marker << endl;
+		}
+
 		cout << "fuckyou" << endl;
-		cout << tvecs2[0]<<endl;
+		//cout << tvecs2[0]<<endl;
+		//cout << "fuckyou2" << endl;
         // Take off / Landing 
         if (key == ' ') {
             if (ardrone.onGround()) ardrone.takeoff();
@@ -145,7 +164,7 @@ int main(int argc, char *argv[])
     }
 
     // See you
-    ardrone.close();
+    //ardrone.close();
 
     return 0;
 }
