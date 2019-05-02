@@ -3,7 +3,6 @@
 #include <vector>
 #include <opencv2/aruco.hpp>
 #include <opencv2/aruco/dictionary.hpp>
-#include "pid.hpp"
 using namespace cv;
 using namespace std;
 // --------------------------------------------------------------------------
@@ -18,24 +17,26 @@ int main(int argc, char *argv[])
     ARDrone ardrone;
 
     //calibrate
-    int i = 15; //capture 15 frames
-    Mat frame;
-    Mat out;
     Mat intrinsic;
     Mat distortionCoeffs;
-    Mat outputMapX;
-    Mat outputMapY;
-    vector<Mat> rvecs;
-    vector<Mat> tvecs;
-    vector<Point2f> frame_corners;
-    vector<vector<Point2f>> corners_2d;
-    vector<vector<Point3f>> points_3d;
-    Size imgsize(7, 5);
 
-    Mat image;
+    //detect marker
+    vector<Vec3b> rvecs;
+    vector<Vec3b> tvecs;
+    const float markerLength = 12.7;
+    vector<int> ids;
+    vector<vector<Point2f>> corners;
+
+    //dictionary
+    cv::aruco::Dictionary dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
+
+    FileStorage fs("calibration.xml", FileStorage::READ);
+    fs["intrinsic"] >> intrinsic;
+    fs["distortion"] >> distortionCoeffs;
 
     // Initialize
-    /*if (!ardrone.open()) {
+    if (!ardrone.open())
+    {
         std::cout << "Failed to initialize." << std::endl;
         return -1;
     }
@@ -60,53 +61,14 @@ int main(int argc, char *argv[])
     std::cout << "*    'C'     -- Change camera         *" << std::endl;
     std::cout << "*    'Esc'   -- Exit                  *" << std::endl;
     std::cout << "*                                     *" << std::endl;
-    std::cout << "***************************************" << std::endl;*/
+    std::cout << "***************************************" << std::endl;
 
-    //dictionary
-    //cv::Ptr<cv::aruco::Dictionary> dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
-    cv::aruco::Dictionary dictionary = cv::aruco::getPredefinedDictionary(cv::aruco::DICT_6X6_250);
+    //VideoCapture cap(1);
 
-    const float markerLength = 12.7;
-    std::vector<int> ids;
-    std::vector<std::vector<cv::Point2f>> corners;
+    //Mat Mout;
+    //initUndistortRectifyMap(intrinsic, distortionCoeffs, Mat(), intrinsic, frame.size(), CV_32FC1, outputMapX, outputMapY);
+    //remap(frame, out, outputMapX, outputMapY, INTER_LINEAR);
 
-    VideoCapture cap(1);
-    PIDManager pid_adjustor("pid.yaml");
-    //calibrate camera
-    while (i)
-    {
-        // Get an image
-        //frame = ardrone.getImage();
-        cap >> frame;
-        cvtColor(frame, frame, CV_RGB2GRAY);
-        bool n = findChessboardCorners(frame, Size(7, 5), frame_corners);
-        if (!n)
-            continue; //to make sure we capture the chessboard. If not, capture again
-        cornerSubPix(frame, frame_corners, Size(15, 15), Size(-1, -1), TermCriteria(TermCriteria::EPS | TermCriteria::COUNT, 30, 0.1));
-        cout << i << "\n";
-
-        vector<Point3f> temp_3d;
-        //corners_2d.insert(corners_2d.end(), frame_corners.begin(), frame_corners.end());
-        corners_2d.push_back(frame_corners);
-        for (size_t i = 0; i < 5; i++)
-        {
-            for (size_t j = 0; j < 7; j++)
-            {
-                Point3f curr_point;
-                curr_point.x = 2.9 * i;
-                curr_point.y = 2.9 * j;
-                curr_point.z = 0;
-                temp_3d.push_back(curr_point);
-            }
-        }
-        points_3d.push_back(temp_3d);
-        frame_corners.clear();
-        i--;
-    }
-    calibrateCamera(points_3d, corners_2d, frame.size(), intrinsic, distortionCoeffs, rvecs, tvecs);
-    vector<Vec3d> rvecs2, tvecs2;
-    Mat error(4, 1, CV_64F);
-    Mat pid_output(4, 1, CV_64F);
     while (1)
     {
 
@@ -115,36 +77,39 @@ int main(int argc, char *argv[])
         if (key == 0x1b)
             break;
 
+        //PID controls
+        PIDManager my_pids("pid.yaml");
+        cv::Mat error(4, 1, CV_64F);
+        cv::Mat output_v(4, 1, CV_64F);
+
         // Get an image
-        //cv::Mat image = ardrone.getImage();
-        cap >> image;
-        //cvtColor(image, image, CV_RGB2GRAY);
-        Mat out;
-        initUndistortRectifyMap(intrinsic, distortionCoeffs, Mat(), intrinsic, image.size(), CV_32FC1, outputMapX, outputMapY);
-        remap(image, image, outputMapX, outputMapY, INTER_LINEAR);
+        cv::Mat image = ardrone.getImage();
 
         cout << "fucking" << endl;
 
         cv::aruco::detectMarkers(image, dictionary, corners, ids);
-        cv::aruco::estimatePoseSingleMarkers(corners, markerLength, intrinsic, distortionCoeffs, rvecs2, tvecs2);
+        cv::aruco::estimatePoseSingleMarkers(corners, markerLength, intrinsic, distortionCoeffs, rvecs, tvecs);
         cout << "test1" << endl;
         aruco::drawDetectedMarkers(image, corners, ids);
         cout << "test2" << endl;
-        //cout << rvecs2[0] << endl;
-        //aruco::drawAxis(out, intrinsic, distortionCoeffs, rvecs2, tvecs2, 0.1);
+
         for (int index_marker = 0; index_marker < ids.size(); index_marker++)
         {
-            cout << "rvecs2[0]" << rvecs2[index_marker] << endl;
-            aruco::drawAxis(image, intrinsic, distortionCoeffs, rvecs2[index_marker], tvecs2[index_marker], 10);
-            cout << "tvecs2[0]" << tvecs2[index_marker] << endl;
-            cout << "tvecs2[1]" << tvecs2[index_marker + 1] << endl;
-            cout << "tvecs2[2]" << tvecs2[index_marker + 2] << endl;
-
+            aruco::drawAxis(image, intrinsic, distortionCoeffs, rvecs[index_marker], tvecs[index_marker], 10);
+            cout << "rvecs2[0]" << rvecs[index_marker] << endl;
+            cout << "tvecs2[0]" << tvecs[index_marker] << endl;
+            cout << "tvecs2[1]" << tvecs[index_marker + 1] << endl;
+            cout << "tvecs2[2]" << tvecs[index_marker + 2] << endl;
             cout << index_marker << endl;
         }
-        error = (tvecs2[0], tvecs2[1], tvecs2[2], rvecs2[0]);
 
-        pid_adjustor.getCommand(error, pid_output);
+        //PID speed adjustment
+        error[0] = tvecs[0][2]; //x
+        error[1] = tvecs[0][0]; //y
+        error[2] = tvecs[0][1]; //z
+        error[3] = rvecs[0];    //rotation
+
+        my_pids.getCommand(error, output_v);
 
         cout << "fuckyou" << endl;
         //cout << tvecs2[0]<<endl;
@@ -176,7 +141,7 @@ int main(int argc, char *argv[])
             vz = 1.0;
         if (key == 'a')
             vz = -1.0;
-        ardrone.move3D(vx, vy, vz, vr);
+        ardrone.move3D(output_v[0], output_v[1], output_v[2], output_v[3]);
 
         // Change camera
         static int mode = 0;
@@ -188,7 +153,7 @@ int main(int argc, char *argv[])
     }
 
     // See you
-    //ardrone.close();
+    ardrone.close();
 
     return 0;
 }
